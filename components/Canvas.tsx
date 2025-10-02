@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 import { Point, Stroke } from '@/lib/types';
 
 interface CanvasProps {
@@ -21,23 +21,33 @@ export default function Canvas({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentStroke, setCurrentStroke] = useState<Point[]>([]);
-  const [pendingStrokes, setPendingStrokes] = useState<Stroke[]>([]);
+  const [localStrokes, setLocalStrokes] = useState<Stroke[]>([]);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [scale, setScale] = useState(1);
   const [isPanning, setIsPanning] = useState(false);
   const [lastPanPoint, setLastPanPoint] = useState<Point | null>(null);
+  const strokeCountRef = useRef(0);
+
+  // Track when new strokes arrive from database
+  useEffect(() => {
+    const newStrokeCount = strokes.length;
+    if (newStrokeCount > strokeCountRef.current) {
+      // New strokes arrived, clear local strokes older than 2 seconds
+      const cutoffTime = Date.now() - 2000;
+      setLocalStrokes(prev =>
+        prev.filter(local => new Date(local.created_at).getTime() > cutoffTime)
+      );
+    }
+    strokeCountRef.current = newStrokeCount;
+  }, [strokes.length]);
 
   // Redraw canvas whenever strokes, offset, or scale changes
-  useEffect(() => {
+  const redrawCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-
-    // Set canvas size
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight - 60; // Account for toolbar
 
     // Clear canvas
     ctx.fillStyle = '#ffffff';
@@ -47,11 +57,32 @@ export default function Canvas({
     ctx.save();
     ctx.setTransform(scale, 0, 0, scale, offset.x, offset.y);
 
-    // Combine database strokes with pending strokes
-    const allStrokes = [...strokes, ...pendingStrokes];
+    // Render all database strokes
+    strokes.forEach((stroke) => {
+      if (stroke.type === 'draw' && stroke.points) {
+        ctx.strokeStyle = stroke.color;
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
 
-    // Render all strokes
-    allStrokes.forEach((stroke) => {
+        ctx.beginPath();
+        stroke.points.forEach((point, index) => {
+          if (index === 0) {
+            ctx.moveTo(point.x, point.y);
+          } else {
+            ctx.lineTo(point.x, point.y);
+          }
+        });
+        ctx.stroke();
+      } else if (stroke.type === 'text' && stroke.text && stroke.position) {
+        ctx.fillStyle = stroke.color;
+        ctx.font = '16px sans-serif';
+        ctx.fillText(stroke.text, stroke.position.x, stroke.position.y);
+      }
+    });
+
+    // Render local strokes (optimistic UI)
+    localStrokes.forEach((stroke) => {
       if (stroke.type === 'draw' && stroke.points) {
         ctx.strokeStyle = stroke.color;
         ctx.lineWidth = 3;
@@ -93,27 +124,19 @@ export default function Canvas({
     }
 
     ctx.restore();
-  }, [strokes, pendingStrokes, offset, scale, currentStroke, userColor]);
+  }, [strokes, localStrokes, currentStroke, offset, scale, userColor]);
 
-  // Remove pending strokes that appear in the database strokes
+  // Setup canvas and redraw
   useEffect(() => {
-    if (pendingStrokes.length > 0 && strokes.length > 0) {
-      setPendingStrokes(prev => prev.filter(pending => {
-        // Remove if we find a stroke with matching points/text
-        return !strokes.some(dbStroke => {
-          if (pending.type === 'draw' && dbStroke.type === 'draw') {
-            return pending.points?.length === dbStroke.points?.length;
-          }
-          if (pending.type === 'text' && dbStroke.type === 'text') {
-            return pending.text === dbStroke.text &&
-                   pending.position?.x === dbStroke.position?.x &&
-                   pending.position?.y === dbStroke.position?.y;
-          }
-          return false;
-        });
-      }));
-    }
-  }, [strokes, pendingStrokes]);
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    // Set canvas size
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight - 60; // Account for toolbar
+
+    redrawCanvas();
+  }, [redrawCanvas]);
 
   const getCanvasPoint = (clientX: number, clientY: number): Point => {
     const canvas = canvasRef.current;
@@ -143,9 +166,9 @@ export default function Canvas({
     if (tool === 'text') {
       const text = prompt('Enter text:');
       if (text) {
-        // Add to pending immediately
-        const pendingText: Stroke = {
-          id: `pending-${Date.now()}`,
+        // Add to local strokes immediately
+        const localText: Stroke = {
+          id: `local-${Date.now()}`,
           user_id: '',
           session_id: '',
           type: 'text',
@@ -154,7 +177,7 @@ export default function Canvas({
           color: userColor,
           created_at: new Date().toISOString(),
         };
-        setPendingStrokes(prev => [...prev, pendingText]);
+        setLocalStrokes(prev => [...prev, localText]);
         onTextAdd(text, point, userColor);
       }
     }
@@ -185,9 +208,9 @@ export default function Canvas({
     }
 
     if (isDrawing && currentStroke.length > 0) {
-      // Add to pending immediately to prevent flicker
-      const pendingDraw: Stroke = {
-        id: `pending-${Date.now()}`,
+      // Add to local strokes immediately
+      const localDraw: Stroke = {
+        id: `local-${Date.now()}`,
         user_id: '',
         session_id: '',
         type: 'draw',
@@ -195,7 +218,7 @@ export default function Canvas({
         color: userColor,
         created_at: new Date().toISOString(),
       };
-      setPendingStrokes(prev => [...prev, pendingDraw]);
+      setLocalStrokes(prev => [...prev, localDraw]);
 
       onStrokeComplete(currentStroke, userColor);
       setCurrentStroke([]);
