@@ -8,7 +8,10 @@ import { supabase } from '@/lib/supabase';
  */
 export async function POST(request: NextRequest) {
   try {
-    const { userId, sessionId, type, points, color, text, position } = await request.json();
+    const body = await request.json();
+    const userId = body.userId || body.user_id;
+    const sessionId = body.sessionId || body.session_id;
+    const { type, points, color, text, position } = body;
 
     // Validate required fields
     if (!userId || !sessionId || !type || !color) {
