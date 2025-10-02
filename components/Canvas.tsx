@@ -25,7 +25,7 @@ export default function Canvas({
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [scale, setScale] = useState(1);
   const [isPanning, setIsPanning] = useState(false);
-  const [lastPanPoint, setLastPanPoint] = useState<Point | null>(null);
+  const lastPanPointRef = useRef<{ x: number; y: number } | null>(null);
   const strokeCountRef = useRef(0);
 
   // Track when new strokes arrive from database
@@ -154,7 +154,7 @@ export default function Canvas({
 
     if (tool === 'pan') {
       setIsPanning(true);
-      setLastPanPoint(point);
+      lastPanPointRef.current = { x: e.clientX, y: e.clientY };
       return;
     }
 
@@ -184,15 +184,15 @@ export default function Canvas({
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
-    const point = getCanvasPoint(e.clientX, e.clientY);
-
-    if (isPanning && lastPanPoint) {
-      const dx = (point.x - lastPanPoint.x) * scale;
-      const dy = (point.y - lastPanPoint.y) * scale;
-      setOffset({ x: offset.x + dx, y: offset.y + dy });
-      setLastPanPoint(point);
+    if (isPanning && lastPanPointRef.current) {
+      const dx = e.clientX - lastPanPointRef.current.x;
+      const dy = e.clientY - lastPanPointRef.current.y;
+      setOffset(prev => ({ x: prev.x + dx, y: prev.y + dy }));
+      lastPanPointRef.current = { x: e.clientX, y: e.clientY };
       return;
     }
+
+    const point = getCanvasPoint(e.clientX, e.clientY);
 
     if (!isDrawing || tool !== 'draw') return;
 
@@ -203,7 +203,7 @@ export default function Canvas({
   const handlePointerUp = () => {
     if (isPanning) {
       setIsPanning(false);
-      setLastPanPoint(null);
+      lastPanPointRef.current = null;
       return;
     }
 
