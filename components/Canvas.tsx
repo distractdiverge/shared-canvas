@@ -21,6 +21,7 @@ export default function Canvas({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentStroke, setCurrentStroke] = useState<Point[]>([]);
+  const [pendingStrokes, setPendingStrokes] = useState<Stroke[]>([]);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [scale, setScale] = useState(1);
   const [isPanning, setIsPanning] = useState(false);
@@ -46,8 +47,11 @@ export default function Canvas({
     ctx.save();
     ctx.setTransform(scale, 0, 0, scale, offset.x, offset.y);
 
+    // Combine database strokes with pending strokes
+    const allStrokes = [...strokes, ...pendingStrokes];
+
     // Render all strokes
-    strokes.forEach((stroke) => {
+    allStrokes.forEach((stroke) => {
       if (stroke.type === 'draw' && stroke.points) {
         ctx.strokeStyle = stroke.color;
         ctx.lineWidth = 3;
@@ -89,7 +93,27 @@ export default function Canvas({
     }
 
     ctx.restore();
-  }, [strokes, offset, scale, currentStroke, userColor]);
+  }, [strokes, pendingStrokes, offset, scale, currentStroke, userColor]);
+
+  // Remove pending strokes that appear in the database strokes
+  useEffect(() => {
+    if (pendingStrokes.length > 0 && strokes.length > 0) {
+      setPendingStrokes(prev => prev.filter(pending => {
+        // Remove if we find a stroke with matching points/text
+        return !strokes.some(dbStroke => {
+          if (pending.type === 'draw' && dbStroke.type === 'draw') {
+            return pending.points?.length === dbStroke.points?.length;
+          }
+          if (pending.type === 'text' && dbStroke.type === 'text') {
+            return pending.text === dbStroke.text &&
+                   pending.position?.x === dbStroke.position?.x &&
+                   pending.position?.y === dbStroke.position?.y;
+          }
+          return false;
+        });
+      }));
+    }
+  }, [strokes, pendingStrokes]);
 
   const getCanvasPoint = (clientX: number, clientY: number): Point => {
     const canvas = canvasRef.current;
@@ -119,6 +143,18 @@ export default function Canvas({
     if (tool === 'text') {
       const text = prompt('Enter text:');
       if (text) {
+        // Add to pending immediately
+        const pendingText: Stroke = {
+          id: `pending-${Date.now()}`,
+          user_id: '',
+          session_id: '',
+          type: 'text',
+          text,
+          position: point,
+          color: userColor,
+          created_at: new Date().toISOString(),
+        };
+        setPendingStrokes(prev => [...prev, pendingText]);
         onTextAdd(text, point, userColor);
       }
     }
@@ -149,6 +185,18 @@ export default function Canvas({
     }
 
     if (isDrawing && currentStroke.length > 0) {
+      // Add to pending immediately to prevent flicker
+      const pendingDraw: Stroke = {
+        id: `pending-${Date.now()}`,
+        user_id: '',
+        session_id: '',
+        type: 'draw',
+        points: currentStroke,
+        color: userColor,
+        created_at: new Date().toISOString(),
+      };
+      setPendingStrokes(prev => [...prev, pendingDraw]);
+
       onStrokeComplete(currentStroke, userColor);
       setCurrentStroke([]);
     }
