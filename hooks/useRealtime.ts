@@ -7,6 +7,7 @@ import { RealtimeChannel } from '@supabase/supabase-js';
 interface UseRealtimeReturn {
   strokes: Stroke[];
   cursors: CursorPosition[];
+  onlineUsers: number;
   loading: boolean;
   sendStroke: (stroke: Omit<Stroke, 'id' | 'created_at'>) => Promise<void>;
   sendCursorPosition: (x: number, y: number) => void;
@@ -23,6 +24,7 @@ export function useRealtime(
 ): UseRealtimeReturn {
   const [strokes, setStrokes] = useState<Stroke[]>([]);
   const [cursors, setCursors] = useState<CursorPosition[]>([]);
+  const [onlineUsers, setOnlineUsers] = useState(0);
   const [loading, setLoading] = useState(true);
   const [channel, setChannel] = useState<RealtimeChannel | null>(null);
   const [lastCursorUpdate, setLastCursorUpdate] = useState(0);
@@ -96,7 +98,23 @@ export function useRealtime(
           );
         }, 3000);
       })
-      .subscribe();
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED' && userId && userName && userColor) {
+          // Track presence when subscribed
+          await realtimeChannel.track({
+            user_id: userId,
+            user_name: userName,
+            user_color: userColor,
+            online_at: new Date().toISOString(),
+          });
+        }
+      });
+
+    // Listen for presence changes
+    realtimeChannel.on('presence', { event: 'sync' }, () => {
+      const state = realtimeChannel.presenceState();
+      setOnlineUsers(Object.keys(state).length);
+    });
 
     setChannel(realtimeChannel);
 
@@ -158,6 +176,7 @@ export function useRealtime(
   return {
     strokes,
     cursors,
+    onlineUsers,
     loading,
     sendStroke,
     sendCursorPosition,

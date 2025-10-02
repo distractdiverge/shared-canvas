@@ -18,7 +18,7 @@ export default function Home() {
   const { user, session, loading: sessionLoading, error, registerUser } = useSession();
 
   // Realtime collaboration
-  const { strokes, cursors, loading: strokesLoading, sendStroke, sendCursorPosition } = useRealtime(
+  const { strokes, cursors, onlineUsers, loading: strokesLoading, sendStroke, sendCursorPosition } = useRealtime(
     user?.id || null,
     user?.display_name || null,
     user?.selected_color || null
@@ -120,8 +120,8 @@ export default function Home() {
           <span className="font-medium">{user?.display_name}</span>
         </div>
         <div className="text-sm text-gray-500">
-          {strokes.length} stroke{strokes.length !== 1 ? 's' : ''} · {cursors.length} user
-          {cursors.length !== 1 ? 's' : ''} online
+          {strokes.length} stroke{strokes.length !== 1 ? 's' : ''} · {onlineUsers} user
+          {onlineUsers !== 1 ? 's' : ''} online
         </div>
       </div>
 

@@ -27,12 +27,22 @@ export default function Canvas({
   const [isPanning, setIsPanning] = useState(false);
   const lastPanPointRef = useRef<{ x: number; y: number } | null>(null);
   const strokeCountRef = useRef(0);
+  const newStrokeTimestamps = useRef<Map<string, number>>(new Map());
 
   // Track when new strokes arrive from database
   useEffect(() => {
     const newStrokeCount = strokes.length;
     if (newStrokeCount > strokeCountRef.current) {
-      // New strokes arrived, clear local strokes older than 2 seconds
+      // Mark new strokes with timestamp for fade-in animation
+      const newStrokes = strokes.slice(strokeCountRef.current);
+      const now = Date.now();
+      newStrokes.forEach(stroke => {
+        if (!newStrokeTimestamps.current.has(stroke.id)) {
+          newStrokeTimestamps.current.set(stroke.id, now);
+        }
+      });
+
+      // Clear local strokes older than 2 seconds
       const cutoffTime = Date.now() - 2000;
       setLocalStrokes(prev =>
         prev.filter(local => new Date(local.created_at).getTime() > cutoffTime)
@@ -57,8 +67,24 @@ export default function Canvas({
     ctx.save();
     ctx.setTransform(scale, 0, 0, scale, offset.x, offset.y);
 
-    // Render all database strokes
+    // Render all database strokes with fade-in animation
+    const now = Date.now();
     strokes.forEach((stroke) => {
+      // Calculate opacity for fade-in (300ms duration)
+      const timestamp = newStrokeTimestamps.current.get(stroke.id);
+      let opacity = 1;
+      if (timestamp) {
+        const age = now - timestamp;
+        if (age < 300) {
+          opacity = age / 300; // Fade in over 300ms
+        } else {
+          // Remove from map after animation completes
+          newStrokeTimestamps.current.delete(stroke.id);
+        }
+      }
+
+      ctx.globalAlpha = opacity;
+
       if (stroke.type === 'draw' && stroke.points) {
         ctx.strokeStyle = stroke.color;
         ctx.lineWidth = 3;
@@ -79,6 +105,8 @@ export default function Canvas({
         ctx.font = '16px sans-serif';
         ctx.fillText(stroke.text, stroke.position.x, stroke.position.y);
       }
+
+      ctx.globalAlpha = 1; // Reset opacity
     });
 
     // Render local strokes (optimistic UI)
@@ -137,6 +165,28 @@ export default function Canvas({
 
     redrawCanvas();
   }, [redrawCanvas]);
+
+  // Animation loop for fade-in effects
+  useEffect(() => {
+    let animationFrameId: number;
+
+    const animate = () => {
+      if (newStrokeTimestamps.current.size > 0) {
+        redrawCanvas();
+      }
+      animationFrameId = requestAnimationFrame(animate);
+    };
+
+    if (newStrokeTimestamps.current.size > 0) {
+      animationFrameId = requestAnimationFrame(animate);
+    }
+
+    return () => {
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+    };
+  }, [strokes.length, redrawCanvas]);
 
   const getCanvasPoint = (clientX: number, clientY: number): Point => {
     const canvas = canvasRef.current;
