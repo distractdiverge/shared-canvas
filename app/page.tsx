@@ -42,9 +42,7 @@ export default function Home() {
       type: 'draw',
       points,
       color,
-      text: undefined,
-      position: undefined,
-    });
+    } as any);
   };
 
   // Handle text addition
@@ -58,8 +56,7 @@ export default function Home() {
       text,
       position,
       color,
-      points: undefined,
-    });
+    } as any);
   };
 
   // Zoom controls
@@ -133,6 +130,7 @@ export default function Home() {
         <Canvas
           userColor={user?.selected_color || '#FF6B6B'}
           tool={selectedTool}
+          strokes={strokes}
           onStrokeComplete={handleStrokeComplete}
           onTextAdd={handleTextAdd}
         />

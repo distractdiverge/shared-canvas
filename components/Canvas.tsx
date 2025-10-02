@@ -1,16 +1,23 @@
 'use client';
 
 import { useRef, useEffect, useState } from 'react';
-import { Point } from '@/lib/types';
+import { Point, Stroke } from '@/lib/types';
 
 interface CanvasProps {
   userColor: string;
   tool: 'draw' | 'text' | 'pan';
+  strokes?: Stroke[];
   onStrokeComplete: (points: Point[], color: string) => void;
   onTextAdd: (text: string, position: Point, color: string) => void;
 }
 
-export default function Canvas({ userColor, tool, onStrokeComplete, onTextAdd }: CanvasProps) {
+export default function Canvas({
+  userColor,
+  tool,
+  strokes = [],
+  onStrokeComplete,
+  onTextAdd
+}: CanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentStroke, setCurrentStroke] = useState<Point[]>([]);
@@ -19,6 +26,7 @@ export default function Canvas({ userColor, tool, onStrokeComplete, onTextAdd }:
   const [isPanning, setIsPanning] = useState(false);
   const [lastPanPoint, setLastPanPoint] = useState<Point | null>(null);
 
+  // Redraw canvas whenever strokes, offset, or scale changes
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -30,13 +38,58 @@ export default function Canvas({ userColor, tool, onStrokeComplete, onTextAdd }:
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight - 60; // Account for toolbar
 
-    // Clear and set background
+    // Clear canvas
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     // Apply transformations
+    ctx.save();
     ctx.setTransform(scale, 0, 0, scale, offset.x, offset.y);
-  }, [offset, scale]);
+
+    // Render all strokes
+    strokes.forEach((stroke) => {
+      if (stroke.type === 'draw' && stroke.points) {
+        ctx.strokeStyle = stroke.color;
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        ctx.beginPath();
+        stroke.points.forEach((point, index) => {
+          if (index === 0) {
+            ctx.moveTo(point.x, point.y);
+          } else {
+            ctx.lineTo(point.x, point.y);
+          }
+        });
+        ctx.stroke();
+      } else if (stroke.type === 'text' && stroke.text && stroke.position) {
+        ctx.fillStyle = stroke.color;
+        ctx.font = '16px sans-serif';
+        ctx.fillText(stroke.text, stroke.position.x, stroke.position.y);
+      }
+    });
+
+    // Draw current stroke in progress
+    if (currentStroke.length > 0) {
+      ctx.strokeStyle = userColor;
+      ctx.lineWidth = 3;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      ctx.beginPath();
+      currentStroke.forEach((point, index) => {
+        if (index === 0) {
+          ctx.moveTo(point.x, point.y);
+        } else {
+          ctx.lineTo(point.x, point.y);
+        }
+      });
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }, [strokes, offset, scale, currentStroke, userColor]);
 
   const getCanvasPoint = (clientX: number, clientY: number): Point => {
     const canvas = canvasRef.current;
@@ -86,23 +139,6 @@ export default function Canvas({ userColor, tool, onStrokeComplete, onTextAdd }:
 
     const newStroke = [...currentStroke, point];
     setCurrentStroke(newStroke);
-
-    // Draw the current stroke
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d');
-    if (!ctx) return;
-
-    ctx.strokeStyle = userColor;
-    ctx.lineWidth = 3;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-
-    if (currentStroke.length > 0) {
-      ctx.beginPath();
-      ctx.moveTo(currentStroke[currentStroke.length - 1].x, currentStroke[currentStroke.length - 1].y);
-      ctx.lineTo(point.x, point.y);
-      ctx.stroke();
-    }
   };
 
   const handlePointerUp = () => {
