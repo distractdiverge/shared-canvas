@@ -18,7 +18,17 @@ export default function Home() {
   const { user, session, loading: sessionLoading, error, registerUser } = useSession();
 
   // Realtime collaboration
-  const { strokes, cursors, onlineUsers, loading: strokesLoading, sendStroke, sendCursorPosition } = useRealtime(
+  const {
+    strokes,
+    cursors,
+    onlineUsers,
+    loading: strokesLoading,
+    sendStroke,
+    sendCursorPosition,
+    sendDrawingProgress,
+    sendDrawingComplete,
+    drawingStrokes
+  } = useRealtime(
     user?.id || null,
     user?.display_name || null,
     user?.selected_color || null
@@ -131,8 +141,11 @@ export default function Home() {
           userColor={user?.selected_color || '#FF6B6B'}
           tool={selectedTool}
           strokes={strokes}
+          drawingStrokes={drawingStrokes}
           onStrokeComplete={handleStrokeComplete}
           onTextAdd={handleTextAdd}
+          onDrawingProgress={sendDrawingProgress}
+          onDrawingComplete={sendDrawingComplete}
         />
       </div>
 

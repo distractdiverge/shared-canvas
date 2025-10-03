@@ -7,6 +7,9 @@
 
 [build.environment]
   NODE_VERSION = "20"
+  # Omit NEXT_PUBLIC_* keys from secrets scanning
+  # These are intentionally public Supabase credentials designed for client-side use
+  SECRETS_SCAN_OMIT_KEYS = "NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY"
 
 [[redirects]]
   from = "/*"

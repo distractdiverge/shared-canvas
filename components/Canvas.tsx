@@ -7,16 +7,22 @@ interface CanvasProps {
   userColor: string;
   tool: 'draw' | 'text' | 'pan';
   strokes?: Stroke[];
+  drawingStrokes?: Map<string, { points: Point[]; color: string }>;
   onStrokeComplete: (points: Point[], color: string) => void;
   onTextAdd: (text: string, position: Point, color: string) => void;
+  onDrawingProgress: (points: Point[], color: string) => void;
+  onDrawingComplete: () => void;
 }
 
 export default function Canvas({
   userColor,
   tool,
   strokes = [],
+  drawingStrokes = new Map(),
   onStrokeComplete,
-  onTextAdd
+  onTextAdd,
+  onDrawingProgress,
+  onDrawingComplete
 }: CanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -28,17 +34,26 @@ export default function Canvas({
   const lastPanPointRef = useRef<{ x: number; y: number } | null>(null);
   const strokeCountRef = useRef(0);
   const newStrokeTimestamps = useRef<Map<string, number>>(new Map());
+  const recentlyCompletedDrawings = useRef<Map<string, number>>(new Map());
 
   // Track when new strokes arrive from database
   useEffect(() => {
     const newStrokeCount = strokes.length;
     if (newStrokeCount > strokeCountRef.current) {
       // Mark new strokes with timestamp for fade-in animation
+      // BUT skip fade-in for strokes that were recently shown in-progress
       const newStrokes = strokes.slice(strokeCountRef.current);
       const now = Date.now();
       newStrokes.forEach(stroke => {
         if (!newStrokeTimestamps.current.has(stroke.id)) {
-          newStrokeTimestamps.current.set(stroke.id, now);
+          // Check if this user recently completed a drawing (within last 1 second)
+          const lastCompleted = recentlyCompletedDrawings.current.get(stroke.user_id);
+          const wasRecentlyInProgress = lastCompleted && (now - lastCompleted) < 1000;
+
+          // Only add fade-in timestamp if we didn't recently see this user drawing
+          if (!wasRecentlyInProgress) {
+            newStrokeTimestamps.current.set(stroke.id, now);
+          }
         }
       });
 
@@ -50,6 +65,29 @@ export default function Canvas({
     }
     strokeCountRef.current = newStrokeCount;
   }, [strokes.length]);
+
+  // Track when drawing-in-progress is removed (completed)
+  const prevDrawingStrokesRef = useRef(drawingStrokes);
+  useEffect(() => {
+    const prev = prevDrawingStrokesRef.current;
+    const now = Date.now();
+
+    // Find which users were removed (completed drawing)
+    prev.forEach((_, userId) => {
+      if (!drawingStrokes.has(userId)) {
+        recentlyCompletedDrawings.current.set(userId, now);
+      }
+    });
+
+    // Clean up old entries (older than 2 seconds)
+    recentlyCompletedDrawings.current.forEach((timestamp, userId) => {
+      if (now - timestamp > 2000) {
+        recentlyCompletedDrawings.current.delete(userId);
+      }
+    });
+
+    prevDrawingStrokesRef.current = drawingStrokes;
+  }, [drawingStrokes]);
 
   // Redraw canvas whenever strokes, offset, or scale changes
   const redrawCanvas = useCallback(() => {
@@ -133,7 +171,27 @@ export default function Canvas({
       }
     });
 
-    // Draw current stroke in progress
+    // Draw other users' strokes in progress
+    drawingStrokes.forEach((drawingStroke) => {
+      if (drawingStroke.points.length > 0) {
+        ctx.strokeStyle = drawingStroke.color;
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        ctx.beginPath();
+        drawingStroke.points.forEach((point, index) => {
+          if (index === 0) {
+            ctx.moveTo(point.x, point.y);
+          } else {
+            ctx.lineTo(point.x, point.y);
+          }
+        });
+        ctx.stroke();
+      }
+    });
+
+    // Draw current user's stroke in progress
     if (currentStroke.length > 0) {
       ctx.strokeStyle = userColor;
       ctx.lineWidth = 3;
@@ -152,7 +210,7 @@ export default function Canvas({
     }
 
     ctx.restore();
-  }, [strokes, localStrokes, currentStroke, offset, scale, userColor]);
+  }, [strokes, localStrokes, currentStroke, drawingStrokes, offset, scale, userColor]);
 
   // Setup canvas and redraw
   useEffect(() => {
@@ -248,6 +306,9 @@ export default function Canvas({
 
     const newStroke = [...currentStroke, point];
     setCurrentStroke(newStroke);
+
+    // Broadcast drawing progress to other users
+    onDrawingProgress(newStroke, userColor);
   };
 
   const handlePointerUp = () => {
@@ -271,6 +332,7 @@ export default function Canvas({
       setLocalStrokes(prev => [...prev, localDraw]);
 
       onStrokeComplete(currentStroke, userColor);
+      onDrawingComplete();
       setCurrentStroke([]);
     }
     setIsDrawing(false);

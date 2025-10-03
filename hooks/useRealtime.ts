@@ -11,6 +11,9 @@ interface UseRealtimeReturn {
   loading: boolean;
   sendStroke: (stroke: Omit<Stroke, 'id' | 'created_at'>) => Promise<void>;
   sendCursorPosition: (x: number, y: number) => void;
+  sendDrawingProgress: (points: Point[], color: string) => void;
+  sendDrawingComplete: () => void;
+  drawingStrokes: Map<string, { points: Point[]; color: string }>;
 }
 
 /**
@@ -28,6 +31,7 @@ export function useRealtime(
   const [loading, setLoading] = useState(true);
   const [channel, setChannel] = useState<RealtimeChannel | null>(null);
   const [lastCursorUpdate, setLastCursorUpdate] = useState(0);
+  const [drawingStrokes, setDrawingStrokes] = useState<Map<string, { points: Point[]; color: string }>>(new Map());
 
   /**
    * Load existing strokes from database
@@ -55,12 +59,36 @@ export function useRealtime(
    * Set up realtime subscriptions
    */
   useEffect(() => {
-    if (!userId) return;
+    if (!userId || !userName || !userColor) {
+      return;
+    }
 
-    // Create realtime channel
-    const realtimeChannel = supabase.channel(REALTIME_CHANNEL_NAME);
+    // Create realtime channel with broadcast and presence enabled
+    const realtimeChannel = supabase.channel(REALTIME_CHANNEL_NAME, {
+      config: {
+        broadcast: { self: true },
+        presence: { key: userId },
+      },
+    });
 
-    // Subscribe to new strokes
+    // Listen for presence changes
+    realtimeChannel.on('presence', { event: 'sync' }, () => {
+      const state = realtimeChannel.presenceState();
+      const count = Object.keys(state).length;
+      setOnlineUsers(count);
+    });
+
+    realtimeChannel.on('presence', { event: 'join' }, () => {
+      const state = realtimeChannel.presenceState();
+      setOnlineUsers(Object.keys(state).length);
+    });
+
+    realtimeChannel.on('presence', { event: 'leave' }, () => {
+      const state = realtimeChannel.presenceState();
+      setOnlineUsers(Object.keys(state).length);
+    });
+
+    // Subscribe to new strokes and broadcast events
     realtimeChannel
       .on(
         'postgres_changes',
@@ -98,8 +126,38 @@ export function useRealtime(
           );
         }, 3000);
       })
+      .on('broadcast', { event: 'drawing' }, (payload) => {
+        const { userId: drawingUserId, points, color } = payload.payload as {
+          userId: string;
+          points: Point[];
+          color: string;
+        };
+
+        // Don't show our own drawing progress
+        if (drawingUserId === userId) return;
+
+        // Update drawing stroke in progress
+        setDrawingStrokes((prev) => {
+          const newMap = new Map(prev);
+          newMap.set(drawingUserId, { points, color });
+          return newMap;
+        });
+      })
+      .on('broadcast', { event: 'drawing-complete' }, (payload) => {
+        const { userId: drawingUserId } = payload.payload as { userId: string };
+
+        // Delay removing the in-progress stroke to avoid flashing
+        // Keep it visible for 500ms to ensure database stroke appears first
+        setTimeout(() => {
+          setDrawingStrokes((prev) => {
+            const newMap = new Map(prev);
+            newMap.delete(drawingUserId);
+            return newMap;
+          });
+        }, 500);
+      })
       .subscribe(async (status) => {
-        if (status === 'SUBSCRIBED' && userId && userName && userColor) {
+        if (status === 'SUBSCRIBED') {
           // Track presence when subscribed
           await realtimeChannel.track({
             user_id: userId,
@@ -110,18 +168,13 @@ export function useRealtime(
         }
       });
 
-    // Listen for presence changes
-    realtimeChannel.on('presence', { event: 'sync' }, () => {
-      const state = realtimeChannel.presenceState();
-      setOnlineUsers(Object.keys(state).length);
-    });
-
     setChannel(realtimeChannel);
 
     return () => {
+      realtimeChannel.untrack();
       realtimeChannel.unsubscribe();
     };
-  }, [userId]);
+  }, [userId, userName, userColor]);
 
   /**
    * Send a new stroke to the database and broadcast it
@@ -173,6 +226,38 @@ export function useRealtime(
     setLastCursorUpdate(now);
   }, [channel, userId, userName, userColor, lastCursorUpdate]);
 
+  /**
+   * Broadcast drawing progress to other users (throttled)
+   */
+  const sendDrawingProgress = useCallback((points: Point[], color: string) => {
+    if (!channel || !userId) return;
+
+    channel.send({
+      type: 'broadcast',
+      event: 'drawing',
+      payload: {
+        userId,
+        points,
+        color,
+      },
+    });
+  }, [channel, userId]);
+
+  /**
+   * Broadcast drawing completion to other users
+   */
+  const sendDrawingComplete = useCallback(() => {
+    if (!channel || !userId) return;
+
+    channel.send({
+      type: 'broadcast',
+      event: 'drawing-complete',
+      payload: {
+        userId,
+      },
+    });
+  }, [channel, userId]);
+
   return {
     strokes,
     cursors,
@@ -180,5 +265,8 @@ export function useRealtime(
     loading,
     sendStroke,
     sendCursorPosition,
+    sendDrawingProgress,
+    sendDrawingComplete,
+    drawingStrokes,
   };
 }
