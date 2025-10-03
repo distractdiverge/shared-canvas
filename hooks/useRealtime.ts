@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Stroke, CursorPosition } from '@/lib/types';
+import { Stroke, CursorPosition, Point } from '@/lib/types';
 import { REALTIME_CHANNEL_NAME, CURSOR_UPDATE_THROTTLE_MS } from '@/lib/constants';
 import { RealtimeChannel } from '@supabase/supabase-js';
 
