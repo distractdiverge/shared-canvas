@@ -1,0 +1,16 @@
+C4Context
+    title System Context Diagram - Shared Canvas
+
+    Person(user, "Canvas User", "A person accessing the whiteboard via mobile or desktop browser")
+    
+    System(sharedCanvas, "Shared Canvas Application", "Real-time collaborative whiteboard")
+    
+    System_Ext(supabase, "Supabase", "PostgreSQL database + Realtime subscriptions + Edge Functions")
+    System_Ext(netlify, "Netlify", "CDN + Serverless hosting")
+    
+    Rel(user, sharedCanvas, "Draws, adds text, views others' work", "HTTPS/WSS")
+    Rel(sharedCanvas, supabase, "Stores strokes, streams updates", "PostgreSQL + WebSocket")
+    Rel(netlify, sharedCanvas, "Hosts", "CDN")
+    Rel(supabase, supabase, "Scheduled cleanup", "Cron → Edge Function")
+    
+    UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")

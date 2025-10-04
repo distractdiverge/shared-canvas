@@ -1,0 +1,49 @@
+sequenceDiagram
+    participant User
+    participant Browser
+    participant useSession
+    participant API
+    participant DB
+    participant EdgeFunction
+
+    Note over User,EdgeFunction: SESSION START
+    User->>Browser: Opens app
+    Browser->>useSession: Check sessionStorage
+    
+    alt No stored session
+        useSession->>User: Show NameEntryModal
+        User->>useSession: Submit name + color
+        useSession->>API: POST /api/user/register
+        API->>DB: Query/Insert user
+        DB-->>API: User data
+        API-->>useSession: User object
+        useSession->>API: POST /api/session/start
+        API->>DB: INSERT new session
+        API->>DB: UPDATE previous session expiry
+        DB-->>API: Session object
+        API-->>useSession: Session data
+        useSession->>Browser: Store in sessionStorage
+    else Existing session found
+        useSession->>useSession: Restore from sessionStorage
+    end
+    
+    Note over User,EdgeFunction: ACTIVE SESSION
+    User->>Browser: Uses canvas (draws, adds text)
+    Browser->>API: POST /api/stroke (multiple times)
+    API->>DB: INSERT strokes
+    
+    Note over User,EdgeFunction: SESSION END
+    User->>Browser: Closes tab/window
+    Browser->>Browser: beforeunload event
+    Browser->>API: sendBeacon /api/session/end
+    API->>DB: UPDATE session.ended_at
+    API->>DB: UPDATE session.expiry_date (now + 7 days)
+    API->>DB: UPDATE user.last_session_end
+    
+    Note over User,EdgeFunction: CLEANUP (7 days later)
+    EdgeFunction->>EdgeFunction: Scheduled cron trigger
+    EdgeFunction->>DB: Query expired sessions
+    DB-->>EdgeFunction: Session IDs
+    EdgeFunction->>DB: DELETE strokes (cascade)
+    EdgeFunction->>DB: DELETE sessions
+    DB-->>EdgeFunction: Deleted count

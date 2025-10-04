@@ -1,0 +1,36 @@
+sequenceDiagram
+    participant User A
+    participant Canvas A
+    participant Hooks A
+    participant API
+    participant Supabase
+    participant Hooks B
+    participant Canvas B
+    participant User B
+
+    User A->>Canvas A: Start drawing (pointerdown)
+    Canvas A->>Canvas A: Store points locally
+    loop While drawing
+        User A->>Canvas A: Move pointer
+        Canvas A->>Canvas A: Add point to array
+        Canvas A->>Hooks A: sendDrawingProgress(points)
+        Hooks A->>Supabase: Broadcast 'drawing' event
+        Supabase->>Hooks B: Forward 'drawing' event
+        Hooks B->>Canvas B: Update drawingStrokes map
+        Canvas B->>User B: Render in-progress stroke
+    end
+    User A->>Canvas A: End drawing (pointerup)
+    Canvas A->>Canvas A: Add to localStrokes (optimistic)
+    Canvas A->>Hooks A: onStrokeComplete(points)
+    Hooks A->>API: POST /api/stroke
+    API->>Supabase: INSERT stroke
+    Supabase->>Supabase: Trigger realtime notification
+    Supabase->>Hooks A: postgres_changes INSERT
+    Hooks A->>Canvas A: Add to strokes array
+    Supabase->>Hooks B: postgres_changes INSERT
+    Hooks B->>Canvas B: Add to strokes array
+    Canvas A->>Hooks A: sendDrawingComplete()
+    Hooks A->>Supabase: Broadcast 'drawing-complete'
+    Supabase->>Hooks B: Forward 'drawing-complete'
+    Hooks B->>Canvas B: Remove from drawingStrokes (500ms delay)
+    Canvas B->>User B: Show final stroke

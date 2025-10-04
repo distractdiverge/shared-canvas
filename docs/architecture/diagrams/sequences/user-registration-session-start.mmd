@@ -1,0 +1,32 @@
+sequenceDiagram
+    participant User
+    participant Browser
+    participant NameModal
+    participant API
+    participant Supabase
+
+    User->>Browser: Opens app
+    Browser->>Browser: Check sessionStorage
+    alt No existing session
+        Browser->>NameModal: Show modal
+        User->>NameModal: Enter name + select color
+        NameModal->>API: POST /api/user/register
+        API->>API: Generate fingerprint hash
+        API->>Supabase: Query user by fingerprint
+        alt User exists
+            Supabase-->>API: Return existing user
+        else New user
+            API->>Supabase: INSERT new user
+            Supabase-->>API: Return created user
+        end
+        API-->>NameModal: Return user
+        NameModal->>API: POST /api/session/start
+        API->>Supabase: INSERT new session
+        API->>Supabase: UPDATE previous session expiry
+        API-->>NameModal: Return session
+        NameModal->>Browser: Store in sessionStorage
+        Browser->>Browser: Render canvas
+    else Existing session
+        Browser->>Browser: Restore user/session
+        Browser->>Browser: Render canvas
+    end

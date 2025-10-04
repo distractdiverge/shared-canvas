@@ -118,9 +118,47 @@ For automatic cleanup of expired content:
 - ✅ Offline detection
 - ✅ Session management
 
+## Documentation
+
+Comprehensive reverse-engineered documentation is available in the `docs/` directory:
+
+### 📋 Requirements & Specifications
+- **[Requirements Overview](docs/requirements/README.md)** - Complete requirements documentation
+- **[User Stories](docs/requirements/user-stories.md)** - 10 functional user stories with acceptance criteria
+- **[Business Rules](docs/requirements/business-rules.md)** - 14 business rules with implementation details
+- **[API Contracts](docs/requirements/api-contracts.md)** - REST API and realtime event documentation
+- **[Data Model](docs/requirements/data-model.md)** - Database schema, entities, and relationships
+
+### 🏗️ Architecture
+- **[Architecture Overview](docs/architecture/README.md)** - Complete system architecture with diagrams
+- **[Diagrams](docs/architecture/diagrams/)** - Mermaid source files for all architectural diagrams
+  - System Context & Container diagrams (C4 model)
+  - Sequence diagrams for key workflows
+  - Component interaction diagrams
+  - Data model visualization
+
+### 🚀 Developer Resources
+- **[Developer Guide](docs/onboarding/developer-guide.md)** - Setup, workflows, common tasks, debugging
+- **[Decision Records](docs/decisions/)** - Architecture Decision Records (ADRs)
+- **[Documentation Summary](docs/DOCUMENTATION_SUMMARY.md)** - Overview of all documentation
+
+### 🎯 Key Insights
+
+**What is this?** Mobile-first collaborative whiteboard for casual brainstorming with real-time synchronization
+
+**Authentication:** Browser fingerprinting (SHA-256 hash) - no passwords required
+
+**Real-time:** Supabase Realtime (WebSocket) for instant collaboration
+
+**Content Lifecycle:** 7-day automatic expiration after session ends
+
+**Scale:** Optimized for 5-20 concurrent users, hundreds of strokes per canvas
+
+---
+
 ## Next Steps
 
-See the development roadmap and next steps in the project documentation.
+See [Architecture README](docs/architecture/README.md) for technical debt, missing features, and improvement roadmap.
 
 ## License
 

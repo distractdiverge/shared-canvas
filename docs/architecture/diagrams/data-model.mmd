@@ -1,0 +1,54 @@
+classDiagram
+    class User {
+        +UUID id
+        +string display_name
+        +string fingerprint_hash
+        +string selected_color
+        +timestamp last_session_end
+        +timestamp created_at
+    }
+    
+    class Session {
+        +UUID id
+        +UUID user_id
+        +timestamp started_at
+        +timestamp ended_at
+        +timestamp expiry_date
+        +timestamp created_at
+    }
+    
+    class Stroke {
+        +UUID id
+        +UUID user_id
+        +UUID session_id
+        +string type
+        +JSONB points
+        +string color
+        +string text
+        +JSONB position
+        +timestamp created_at
+    }
+    
+    class Point {
+        +number x
+        +number y
+    }
+    
+    class CursorPosition {
+        +string userId
+        +string userName
+        +string color
+        +number x
+        +number y
+        +number timestamp
+    }
+    
+    User "1" --> "*" Session : creates
+    User "1" --> "*" Stroke : draws
+    Session "1" --> "*" Stroke : contains
+    Stroke "*" --> "*" Point : composed of
+    
+    note for User "Identified by fingerprint hash\nSHA-256(name:IP:userAgent)"
+    note for Session "Expires 7 days after ended_at\nExtends on user return"
+    note for Stroke "Type: 'draw' or 'text'\nCascade deletes with session"
+    note for CursorPosition "Ephemeral - not persisted\nBroadcast via WebSocket"

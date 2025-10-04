@@ -1,0 +1,62 @@
+graph TB
+    subgraph "app/page.tsx - Main Orchestrator"
+        Page[Page Component<br/>State: selectedTool, zoom]
+    end
+    
+    subgraph "Custom Hooks"
+        useSession[useSession<br/>user, session, registerUser]
+        useRealtime[useRealtime<br/>strokes, cursors, sendStroke]
+        useOffline[useOffline<br/>isOffline boolean]
+    end
+    
+    subgraph "UI Components"
+        Canvas[Canvas Component<br/>Drawing logic, pointer events]
+        Toolbar[Toolbar Component<br/>Tool selection, zoom controls]
+        NameModal[NameEntryModal<br/>User registration form]
+        OfflineScreen[OfflineScreen<br/>Network status]
+    end
+    
+    subgraph "API Layer"
+        UserAPI[/api/user/register]
+        SessionAPI[/api/session/*]
+        StrokeAPI[/api/stroke]
+    end
+    
+    subgraph "Supabase"
+        DB[(Database)]
+        RT[Realtime Channel]
+    end
+    
+    Page --> useSession
+    Page --> useRealtime
+    Page --> useOffline
+    
+    useSession -->|user state| Page
+    useRealtime -->|strokes, cursors| Page
+    useOffline -->|isOffline| Page
+    
+    Page -->|props: user, strokes| Canvas
+    Page -->|props: selectedTool| Toolbar
+    Page -->|show if !user| NameModal
+    Page -->|show if offline| OfflineScreen
+    
+    Canvas -->|callbacks| Page
+    Toolbar -->|callbacks| Page
+    NameModal -->|onSubmit| Page
+    
+    Page -->|registerUser| useSession
+    useSession --> UserAPI
+    useSession --> SessionAPI
+    
+    Canvas -->|onStrokeComplete| useRealtime
+    useRealtime --> StrokeAPI
+    useRealtime --> RT
+    
+    StrokeAPI --> DB
+    DB -->|INSERT notify| RT
+    RT -->|broadcast| useRealtime
+    
+    style Page fill:#ffd700
+    style Canvas fill:#90ee90
+    style useSession fill:#87ceeb
+    style useRealtime fill:#87ceeb

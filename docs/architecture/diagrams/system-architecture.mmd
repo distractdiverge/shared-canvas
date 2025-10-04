@@ -1,0 +1,39 @@
+graph TB
+    subgraph "Browser"
+        A[React SPA<br/>Next.js 14]
+        B[Custom Hooks<br/>useSession, useRealtime]
+        C[Components<br/>Canvas, Toolbar, Modal]
+        D[SessionStorage<br/>User & Session Data]
+    end
+    
+    subgraph "Netlify Edge"
+        E[API Routes<br/>/api/user/register<br/>/api/session/*<br/>/api/stroke]
+    end
+    
+    subgraph "Supabase Cloud"
+        F[(PostgreSQL<br/>users, sessions, strokes)]
+        G[Realtime Engine<br/>WebSocket Server]
+        H[Edge Function<br/>cleanup-expired-content]
+        I[Row Level Security<br/>Public Policies]
+    end
+    
+    A --> B
+    B --> C
+    B --> D
+    C --> A
+    
+    A -->|Fetch API| E
+    B -->|WebSocket| G
+    
+    E -->|SQL Queries| F
+    F -->|pg_notify| G
+    G -->|Broadcasts| B
+    
+    H -->|Scheduled Daily| F
+    F --> I
+    
+    style A fill:#61dafb
+    style E fill:#00ad9f
+    style F fill:#3ecf8e
+    style G fill:#3ecf8e
+    style H fill:#3ecf8e

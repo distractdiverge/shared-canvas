@@ -1,0 +1,29 @@
+C4Container
+    title Container Diagram - Shared Canvas Application
+
+    Person(user, "User", "Canvas collaborator")
+
+    Container_Boundary(frontend, "Frontend (Browser)") {
+        Container(spa, "React SPA", "Next.js 14 App Router", "UI, canvas rendering, optimistic updates")
+        Container(hooks, "Custom Hooks", "React Hooks", "useSession, useRealtime, useOffline")
+    }
+
+    Container_Boundary(backend, "Backend (Serverless)") {
+        Container(apiRoutes, "API Routes", "Next.js API Routes", "/api/user/register, /api/session/*, /api/stroke")
+    }
+
+    Container_Boundary(supabase, "Supabase Platform") {
+        ContainerDb(postgres, "PostgreSQL", "Supabase", "Users, sessions, strokes")
+        Container(realtime, "Realtime Engine", "WebSocket Server", "Broadcasts, presence tracking")
+        Container(edgeFunction, "Edge Function", "Deno", "cleanup-expired-content")
+    }
+
+    Rel(user, spa, "Interacts with", "HTTPS")
+    Rel(spa, hooks, "Uses")
+    Rel(spa, apiRoutes, "POST /api/stroke, etc.", "Fetch API")
+    Rel(hooks, realtime, "Subscribe to changes", "WebSocket")
+    Rel(apiRoutes, postgres, "Read/write data", "PostgreSQL protocol")
+    Rel(postgres, realtime, "Notify on INSERT", "pg_notify")
+    Rel(edgeFunction, postgres, "Delete expired", "Scheduled daily")
+
+    UpdateLayoutConfig($c4ShapeInRow="2", $c4BoundaryInRow="1")
