@@ -11,6 +11,9 @@ const customJestConfig = {
   testEnvironment: 'jest-environment-jsdom',
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/$1',
+    // Mock Konva for Jest tests
+    '^konva$': '<rootDir>/__mocks__/konva.ts',
+    '^react-konva$': '<rootDir>/__mocks__/react-konva.tsx',
   },
   collectCoverageFrom: [
     'components/**/*.{js,jsx,ts,tsx}',

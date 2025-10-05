@@ -1,6 +1,8 @@
 'use client';
 
-import { useRef, useEffect, useState, useCallback } from 'react';
+import { useRef, useEffect, useState } from 'react';
+import { Stage, Layer, Line, Text } from 'react-konva';
+import Konva from 'konva';
 import { Point, Stroke } from '@/lib/types';
 
 interface CanvasProps {
@@ -24,17 +26,32 @@ export default function Canvas({
   onDrawingProgress,
   onDrawingComplete
 }: CanvasProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const stageRef = useRef<Konva.Stage>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentStroke, setCurrentStroke] = useState<Point[]>([]);
   const [localStrokes, setLocalStrokes] = useState<Stroke[]>([]);
-  const [offset, setOffset] = useState({ x: 0, y: 0 });
-  const [scale, setScale] = useState(1);
-  const [isPanning, setIsPanning] = useState(false);
-  const lastPanPointRef = useRef<{ x: number; y: number } | null>(null);
+  const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
+  const [stageScale, setStageScale] = useState(1);
   const strokeCountRef = useRef(0);
   const newStrokeTimestamps = useRef<Map<string, number>>(new Map());
   const recentlyCompletedDrawings = useRef<Map<string, number>>(new Map());
+  const [dimensions, setDimensions] = useState({ 
+    width: typeof window !== 'undefined' ? window.innerWidth : 800,
+    height: typeof window !== 'undefined' ? window.innerHeight - 60 : 600
+  });
+
+  // Handle window resize
+  useEffect(() => {
+    const handleResize = () => {
+      setDimensions({
+        width: window.innerWidth,
+        height: window.innerHeight - 60
+      });
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Track when new strokes arrive from database
   useEffect(() => {
@@ -89,182 +106,44 @@ export default function Canvas({
     prevDrawingStrokesRef.current = drawingStrokes;
   }, [drawingStrokes]);
 
-  // Redraw canvas whenever strokes, offset, or scale changes
-  const redrawCanvas = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+  // Helper to flatten points array for Konva Line
+  const flattenPoints = (points: Point[]): number[] => {
+    return points.flatMap(p => [p.x, p.y]);
+  };
 
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+  // Helper to get stage point (accounting for pan/zoom)
+  const getStagePoint = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent | PointerEvent>): Point => {
+    const stage = stageRef.current;
+    if (!stage) return { x: 0, y: 0 };
 
-    // Clear canvas
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const pos = stage.getPointerPosition();
+    if (!pos) return { x: 0, y: 0 };
 
-    // Apply transformations
-    ctx.save();
-    ctx.setTransform(scale, 0, 0, scale, offset.x, offset.y);
-
-    // Render all database strokes with fade-in animation
-    const now = Date.now();
-    strokes.forEach((stroke) => {
-      // Calculate opacity for fade-in (300ms duration)
-      const timestamp = newStrokeTimestamps.current.get(stroke.id);
-      let opacity = 1;
-      if (timestamp) {
-        const age = now - timestamp;
-        if (age < 300) {
-          opacity = age / 300; // Fade in over 300ms
-        } else {
-          // Remove from map after animation completes
-          newStrokeTimestamps.current.delete(stroke.id);
-        }
-      }
-
-      ctx.globalAlpha = opacity;
-
-      if (stroke.type === 'draw' && stroke.points) {
-        ctx.strokeStyle = stroke.color;
-        ctx.lineWidth = 3;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-
-        ctx.beginPath();
-        stroke.points.forEach((point, index) => {
-          if (index === 0) {
-            ctx.moveTo(point.x, point.y);
-          } else {
-            ctx.lineTo(point.x, point.y);
-          }
-        });
-        ctx.stroke();
-      } else if (stroke.type === 'text' && stroke.text && stroke.position) {
-        ctx.fillStyle = stroke.color;
-        ctx.font = '16px sans-serif';
-        ctx.fillText(stroke.text, stroke.position.x, stroke.position.y);
-      }
-
-      ctx.globalAlpha = 1; // Reset opacity
-    });
-
-    // Render local strokes (optimistic UI)
-    localStrokes.forEach((stroke) => {
-      if (stroke.type === 'draw' && stroke.points) {
-        ctx.strokeStyle = stroke.color;
-        ctx.lineWidth = 3;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-
-        ctx.beginPath();
-        stroke.points.forEach((point, index) => {
-          if (index === 0) {
-            ctx.moveTo(point.x, point.y);
-          } else {
-            ctx.lineTo(point.x, point.y);
-          }
-        });
-        ctx.stroke();
-      } else if (stroke.type === 'text' && stroke.text && stroke.position) {
-        ctx.fillStyle = stroke.color;
-        ctx.font = '16px sans-serif';
-        ctx.fillText(stroke.text, stroke.position.x, stroke.position.y);
-      }
-    });
-
-    // Draw other users' strokes in progress
-    drawingStrokes.forEach((drawingStroke) => {
-      if (drawingStroke.points.length > 0) {
-        ctx.strokeStyle = drawingStroke.color;
-        ctx.lineWidth = 3;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-
-        ctx.beginPath();
-        drawingStroke.points.forEach((point, index) => {
-          if (index === 0) {
-            ctx.moveTo(point.x, point.y);
-          } else {
-            ctx.lineTo(point.x, point.y);
-          }
-        });
-        ctx.stroke();
-      }
-    });
-
-    // Draw current user's stroke in progress
-    if (currentStroke.length > 0) {
-      ctx.strokeStyle = userColor;
-      ctx.lineWidth = 3;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-
-      ctx.beginPath();
-      currentStroke.forEach((point, index) => {
-        if (index === 0) {
-          ctx.moveTo(point.x, point.y);
-        } else {
-          ctx.lineTo(point.x, point.y);
-        }
-      });
-      ctx.stroke();
-    }
-
-    ctx.restore();
-  }, [strokes, localStrokes, currentStroke, drawingStrokes, offset, scale, userColor]);
-
-  // Setup canvas and redraw
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    // Set canvas size
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight - 60; // Account for toolbar
-
-    redrawCanvas();
-  }, [redrawCanvas]);
-
-  // Animation loop for fade-in effects
-  useEffect(() => {
-    let animationFrameId: number;
-
-    const animate = () => {
-      if (newStrokeTimestamps.current.size > 0) {
-        redrawCanvas();
-      }
-      animationFrameId = requestAnimationFrame(animate);
-    };
-
-    if (newStrokeTimestamps.current.size > 0) {
-      animationFrameId = requestAnimationFrame(animate);
-    }
-
-    return () => {
-      if (animationFrameId) {
-        cancelAnimationFrame(animationFrameId);
-      }
-    };
-  }, [strokes.length, redrawCanvas]);
-
-  const getCanvasPoint = (clientX: number, clientY: number): Point => {
-    const canvas = canvasRef.current;
-    if (!canvas) return { x: 0, y: 0 };
-
-    const rect = canvas.getBoundingClientRect();
+    // Transform to stage coordinates (inverse of stage transform)
     return {
-      x: (clientX - rect.left - offset.x) / scale,
-      y: (clientY - rect.top - offset.y) / scale,
+      x: (pos.x - stagePos.x) / stageScale,
+      y: (pos.y - stagePos.y) / stageScale,
     };
   };
 
-  const handlePointerDown = (e: React.PointerEvent) => {
-    const point = getCanvasPoint(e.clientX, e.clientY);
+  // Calculate opacity for fade-in animation
+  const getStrokeOpacity = (strokeId: string): number => {
+    const timestamp = newStrokeTimestamps.current.get(strokeId);
+    if (!timestamp) return 1;
 
-    if (tool === 'pan') {
-      setIsPanning(true);
-      lastPanPointRef.current = { x: e.clientX, y: e.clientY };
-      return;
+    const age = Date.now() - timestamp;
+    if (age < 300) {
+      return age / 300; // Fade in over 300ms
     }
+    
+    // Remove from map after animation completes
+    newStrokeTimestamps.current.delete(strokeId);
+    return 1;
+  };
+
+  // Event handlers for Konva Stage (supporting both mouse and touch)
+  const handleStagePointerDown = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
+    const point = getStagePoint(e);
 
     if (tool === 'draw') {
       setIsDrawing(true);
@@ -291,19 +170,10 @@ export default function Canvas({
     }
   };
 
-  const handlePointerMove = (e: React.PointerEvent) => {
-    if (isPanning && lastPanPointRef.current) {
-      const dx = e.clientX - lastPanPointRef.current.x;
-      const dy = e.clientY - lastPanPointRef.current.y;
-      setOffset(prev => ({ x: prev.x + dx, y: prev.y + dy }));
-      lastPanPointRef.current = { x: e.clientX, y: e.clientY };
-      return;
-    }
-
-    const point = getCanvasPoint(e.clientX, e.clientY);
-
+  const handleStagePointerMove = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
     if (!isDrawing || tool !== 'draw') return;
 
+    const point = getStagePoint(e);
     const newStroke = [...currentStroke, point];
     setCurrentStroke(newStroke);
 
@@ -311,13 +181,7 @@ export default function Canvas({
     onDrawingProgress(newStroke, userColor);
   };
 
-  const handlePointerUp = () => {
-    if (isPanning) {
-      setIsPanning(false);
-      lastPanPointRef.current = null;
-      return;
-    }
-
+  const handleStagePointerUp = () => {
     if (isDrawing && currentStroke.length > 0) {
       // Add to local strokes immediately
       const localDraw: Stroke = {
@@ -338,15 +202,159 @@ export default function Canvas({
     setIsDrawing(false);
   };
 
+  // Handle wheel zoom
+  const handleWheel = (e: Konva.KonvaEventObject<WheelEvent>) => {
+    e.evt.preventDefault();
+
+    const stage = stageRef.current;
+    if (!stage) return;
+
+    const oldScale = stageScale;
+    const pointer = stage.getPointerPosition();
+    if (!pointer) return;
+
+    const mousePointTo = {
+      x: (pointer.x - stagePos.x) / oldScale,
+      y: (pointer.y - stagePos.y) / oldScale,
+    };
+
+    // Zoom factor
+    const scaleBy = 1.1;
+    const newScale = e.evt.deltaY < 0 ? oldScale * scaleBy : oldScale / scaleBy;
+
+    // Limit zoom range
+    const clampedScale = Math.max(0.1, Math.min(5, newScale));
+
+    setStageScale(clampedScale);
+    setStagePos({
+      x: pointer.x - mousePointTo.x * clampedScale,
+      y: pointer.y - mousePointTo.y * clampedScale,
+    });
+  };
+
+  // Get cursor style
+  const getCursor = () => {
+    if (tool === 'pan') return 'grab';
+    if (tool === 'text') return 'text';
+    return 'crosshair';
+  };
+
   return (
-    <canvas
-      ref={canvasRef}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
-      onPointerLeave={handlePointerUp}
-      className="touch-none"
-      style={{ cursor: tool === 'pan' ? 'grab' : tool === 'text' ? 'text' : 'crosshair' }}
-    />
+    <div style={{ touchAction: 'none' }}>
+      <Stage
+        ref={stageRef}
+        width={dimensions.width}
+        height={dimensions.height}
+        onMouseDown={handleStagePointerDown}
+        onMouseMove={handleStagePointerMove}
+        onMouseUp={handleStagePointerUp}
+        onTouchStart={handleStagePointerDown}
+        onTouchMove={handleStagePointerMove}
+        onTouchEnd={handleStagePointerUp}
+        onWheel={handleWheel}
+        draggable={tool === 'pan'}
+        x={stagePos.x}
+        y={stagePos.y}
+        scaleX={stageScale}
+        scaleY={stageScale}
+        onDragEnd={(e) => {
+          setStagePos({
+            x: e.target.x(),
+            y: e.target.y(),
+          });
+        }}
+        style={{ cursor: getCursor() }}
+      >
+        <Layer>
+          {/* Render all database strokes with fade-in animation */}
+          {strokes.map((stroke) => {
+            const opacity = getStrokeOpacity(stroke.id);
+
+            if (stroke.type === 'draw' && stroke.points) {
+              return (
+                <Line
+                  key={stroke.id}
+                  points={flattenPoints(stroke.points)}
+                  stroke={stroke.color}
+                  strokeWidth={3}
+                  lineCap="round"
+                  lineJoin="round"
+                  opacity={opacity}
+                />
+              );
+            } else if (stroke.type === 'text' && stroke.text && stroke.position) {
+              return (
+                <Text
+                  key={stroke.id}
+                  x={stroke.position.x}
+                  y={stroke.position.y}
+                  text={stroke.text}
+                  fontSize={16}
+                  fill={stroke.color}
+                  opacity={opacity}
+                />
+              );
+            }
+            return null;
+          })}
+
+          {/* Render local strokes (optimistic UI) */}
+          {localStrokes.map((stroke) => {
+            if (stroke.type === 'draw' && stroke.points) {
+              return (
+                <Line
+                  key={stroke.id}
+                  points={flattenPoints(stroke.points)}
+                  stroke={stroke.color}
+                  strokeWidth={3}
+                  lineCap="round"
+                  lineJoin="round"
+                />
+              );
+            } else if (stroke.type === 'text' && stroke.text && stroke.position) {
+              return (
+                <Text
+                  key={stroke.id}
+                  x={stroke.position.x}
+                  y={stroke.position.y}
+                  text={stroke.text}
+                  fontSize={16}
+                  fill={stroke.color}
+                />
+              );
+            }
+            return null;
+          })}
+
+          {/* Render other users' strokes in progress */}
+          {Array.from(drawingStrokes.entries()).map(([userId, drawingStroke]) => {
+            if (drawingStroke.points.length > 0) {
+              return (
+                <Line
+                  key={`drawing-${userId}`}
+                  points={flattenPoints(drawingStroke.points)}
+                  stroke={drawingStroke.color}
+                  strokeWidth={3}
+                  lineCap="round"
+                  lineJoin="round"
+                />
+              );
+            }
+            return null;
+          })}
+
+          {/* Render current user's stroke in progress */}
+          {currentStroke.length > 0 && (
+            <Line
+              points={flattenPoints(currentStroke)}
+              stroke={userColor}
+              strokeWidth={3}
+              lineCap="round"
+              lineJoin="round"
+            />
+          )}
+        </Layer>
+      </Stage>
+    </div>
   );
 }
